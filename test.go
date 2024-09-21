@@ -14,20 +14,16 @@ import (
 
 // var rng = pcg.NewPCG32()
 var p_inc uint64 = 1442695040888963407
-var p_seed uint64 = 12047754176567800795
+var p_seed uint64 = 12047754176567800795 // required for godot, it's the default seed it uses for when no seed is set
 var current_inc uint64 = p_inc
 var current_seed uint64 = 0
 
 // windowkill
 
-type Color struct {
-	r, g, b, a float32
-}
-
 var charList = [6]string{"basic", "mage", "laser", "melee", "pointer", "swarm"}
 
 func main() {
-	set_seed(uint64(djb2.SumString("freeme")))
+	set_seed(uint64(djb2.SumString("eaea")))
 	itemData := Array{
 		"speed": {
 			Cost: 1.0,
@@ -69,10 +65,10 @@ func main() {
 	var intensity = randf_range(0.20, 1.0)
 	var char = charList[int(randi())%len(charList)]
 	var abilityChar = charList[int(randi())%len(charList)]
-	var abilityLevel = 1.0 + math.Round(run(randf64(), 1.5/(1.0+intensity), 1.0, 0.0)*6)
+	var abilityLevel = 1.0 + math.Round(run(randf(), 1.5/(1.0+intensity), 1.0, 0.0)*6)
 
 	itemCategories := []string{"speed", "fireRate", "multiShot", "wallPunch", "splashDamage", "piercing", "freezing", "infection"}
-	print("itemCategories:", itemCategories)
+	fmt.Println("itemCategories:", itemCategories)
 
 	var itemCount float64 = float64(len(itemCategories))
 
@@ -87,7 +83,7 @@ func main() {
 	shuffle(itemCategories)
 	pcg.inc = oldInc
 	pcg.state = oldstate
-	if randf64() < intensity {
+	if randf() < intensity {
 		multishotIdx := -1
 		for i, category := range itemCategories {
 			if category == "multiShot" {
@@ -102,7 +98,7 @@ func main() {
 		insertIdx := int32(itemCount) - 1 - randi_range(0, 2)
 		itemCategories = append(itemCategories[:insertIdx], append([]string{"multiShot"}, itemCategories[insertIdx:]...)...)
 	}
-	if randf64() < intensity {
+	if randf() < intensity {
 		fireRateIdx := -1
 		for i, category := range itemCategories {
 			if category == "fireRate" {
@@ -131,14 +127,14 @@ func main() {
 		if i == int(itemCount)-1 {
 			special += 4.0 * randf_range(0.0, float32(math.Pow(intensity, 2.0)))
 		}
-		amount := math.Max(0.0, 3.0*run(catT, itemDistSteepness, 1.0, 0.0)+3.0*clamp(randfn32(0.0, 0.15), -0.5, 0.5))
+		amount := math.Max(0.0, 3.0*run(catT, itemDistSteepness, 1.0, 0.0)+3.0*clamp(randfn(0.0, 0.15), -0.5, 0.5))
 		itemCounts[item] = int(clamp(math.Round(baseAmount+amount*((points/cost)/(1.0+5.0*itemDistArea))+special), 0.0, 26.0))
 		total += itemCounts[item]
 	}
 	intensity = -0.05 + intensity*lerp(0.33, 1.2, smoothCorner((float64(itemCounts["multiShot"])*1.8+float64(itemCounts["fireRate"]))/12.0, 1.0, 1.0, 4.0))
-	var finalT = randfn32(float32(math.Pow(intensity, 1.2)), 0.05)
+	var finalT = randfn(float32(math.Pow(intensity, 1.2)), 0.05)
 	var startTime = clamp(lerp(60.0*2.0, 60.0*20.0, finalT), 60.0*2.0, 60.0*25.0)
-	var r, g, b, _ = colorconv.HSVToRGB(randf64(), randf64(), float64(1.0))
+	var r, g, b, _ = colorconv.HSVToRGB(randf(), randf(), float64(1.0))
 	var colorState = randi_range(0, 2)
 	fmt.Println("char:", char)
 	fmt.Println("abilityChar:", abilityChar)
@@ -147,7 +143,7 @@ func main() {
 	fmt.Println("itemCounts:", itemCounts)
 	fmt.Println("startTime:", startTime)
 	fmt.Println("colorState:", colorState)
-	fmt.Println(r/255, g/255, b/255)
+	fmt.Println(float32(r)/255, float32(g)/255, float32(b)/255, 1.0)
 }
 
 func pinch(v float64) float64 {
@@ -262,26 +258,16 @@ func pcg32_boundedrand_r(rng *pcg32_random_t, bound uint32) uint32 {
 		}
 	}
 }
-func min(a, b uint32) uint32 {
-	if a < b {
-		return a
-	}
-	return b
-}
 
 // random_pcg.cpp
 
-func randomize() {
-	// PCG_DEFAULT_INC_64 is defined as 1442695040888963407 in pcg.h
-	seed((uint64(time.Now().Unix()+time.Now().UnixNano()/1000)*pcg.state + 1442695040888963407))
-}
-
-func randomf64(p_from float64, p_to float64) float64 {
-	return randd()*(p_to-p_from) + p_from
-}
+// func randomf64(p_from float64, p_to float64) float64 {
+// 	return randd()*(p_to-p_from) + p_from
+// }
+// this ones in the source code from godot, and might be used for the global random number generator
 
 func randomf32(p_from float32, p_to float32) float32 {
-	return randf()*(p_to-p_from) + p_from
+	return randf32()*(p_to-p_from) + p_from
 }
 
 func randomi(p_from int, p_to int) int {
@@ -306,16 +292,17 @@ func rand() uint32 {
 	return pcg32_random_r(&pcg)
 }
 
-func randd() float64 {
-	proto_exp_offset := rand()
-	if proto_exp_offset == 0 {
-		return 0
-	}
-	var significand uint64 = (uint64(rand()) << 32) | uint64(rand()) | 0x8000000000000001
-	return math.Ldexp(float64(significand), -64-bits.LeadingZeros32(proto_exp_offset))
-}
+// func randd() float64 {
+// 	proto_exp_offset := rand()
+// 	if proto_exp_offset == 0 {
+// 		return 0
+// 	}
+// 	var significand uint64 = (uint64(rand()) << 32) | uint64(rand()) | 0x8000000000000001
+// 	return math.Ldexp(float64(significand), -64-bits.LeadingZeros32(proto_exp_offset))
+// }
+//
 
-func randf() float32 {
+func randf32() float32 {
 	var proto_exp_offset uint32 = rand()
 	if proto_exp_offset == 0 {
 		return 0
@@ -323,58 +310,55 @@ func randf() float32 {
 	return float32(math.Ldexp(float64(rand()|0x80000001), -32-bits.LeadingZeros32(proto_exp_offset)))
 }
 
-func randf64() float64 {
-	var proto_exp_offset uint32 = rand()
-	if proto_exp_offset == 0 {
-		return 0
-	}
-	return float64(float32(math.Ldexp(float64(rand()|0x80000001), -32-bits.LeadingZeros32(proto_exp_offset))))
-}
+// func randfn64(p_mean float64, p_deviation float64) float64 {
+// 	var temp float64 = randd()
+// 	if temp < 0.00001 {
+// 		temp += 0.00001 // this is what CMP_EPSILON is defined as
+// 	}
+// 	// Math_TAU is defined as 6.2831853071795864769252867666
+// 	Math_TAU := 6.2831853071795864769252867666
+// 	return float64(float32(p_mean + p_deviation*(math.Cos(Math_TAU*randd())*math.Sqrt(-2.0*math.Log(temp)))))
+// }
 
-func randfn64(p_mean float64, p_deviation float64) float64 {
-	var temp float64 = randd()
-	if temp < 0.00001 {
-		temp += 0.00001 // this is what CMP_EPSILON is defined as
-	}
-	// Math_TAU is defined as 6.2831853071795864769252867666
-	Math_TAU := 6.2831853071795864769252867666
-	return float64(float32(p_mean + p_deviation*(math.Cos(Math_TAU*randd())*math.Sqrt(-2.0*math.Log(temp)))))
-}
-
-func randfn32(p_mean float32, p_deviation float32) float64 {
-	var temp float32 = randf()
-	if temp < 0.00001 {
-		temp += 0.00001 // this is what CMP_EPSILON is defined as
-	}
-	// Math_TAU is defined as 6.2831853071795864769252867666
-	Math_TAU := 6.2831853071795864769252867666
-	return float64(p_mean + p_deviation*(float32(math.Cos(Math_TAU*float64(randf()))*math.Sqrt(-2.0*math.Log(float64(temp))))))
-}
+// random_number_generator.h
 
 func seed(p_seed uint64) {
 	current_seed = p_seed
 	pcg32_srandom_r(&pcg, current_seed, current_inc)
 }
 
-func get_seed() uint64 { return current_seed }
-
-func set_state(p_state uint64) { pcg.state = p_state }
+func set_seed(p_seed uint64)   { seed(p_seed) }
+func get_seed() uint64         { return current_seed }
+func set_state(p_state uint64) { pcg.state = p_state } // this one is just unused in my code, but is something the RandomNumberGenerator object uses
 func get_state() uint64        { return pcg.state }
 
-// random_number_generator.h
+func randomize() { // required for godot, but techincally will never be used since it just randomises, can only really be used for seeing which random numbers are more likely than others
+	// PCG_DEFAULT_INC_64 is defined as 1442695040888963407 in pcg.h
+	seed((uint64(time.Now().Unix()+time.Now().UnixNano()/1000)*pcg.state + 1442695040888963407))
+}
 
 func randi() uint32 {
 	return rand()
 }
-
-func set_seed(p_seed uint64) {
-	seed(p_seed)
+func randf() float64 {
+	var proto_exp_offset uint32 = rand()
+	if proto_exp_offset == 0 {
+		return 0
+	}
+	return float64(float32(math.Ldexp(float64(rand()|0x80000001), -32-bits.LeadingZeros32(proto_exp_offset))))
 }
-
 func randf_range(p_from float32, p_to float32) float64 {
 	return float64(float32(float64(randomf32(p_from, p_to))))
 }
-
+func randfn(p_mean float32, p_deviation float32) float64 {
+	var temp float32 = randf32()
+	if temp < 0.00001 {
+		temp += 0.00001 // this is what CMP_EPSILON is defined as
+	}
+	// Math_TAU is defined as 6.2831853071795864769252867666
+	Math_TAU := 6.2831853071795864769252867666
+	return float64(p_mean + p_deviation*(float32(math.Cos(Math_TAU*float64(randf32()))*math.Sqrt(-2.0*math.Log(float64(temp))))))
+}
 func randi_range(p_from int, p_to int) int32 {
 	return int32(randomi(p_from, p_to))
 }
