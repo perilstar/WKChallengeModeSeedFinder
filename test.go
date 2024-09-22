@@ -7,12 +7,26 @@ import (
 	"time"
 
 	"github.com/crazy3lf/colorconv"
-	"github.com/dim13/djb2"
 )
 
-// var seed uint64 = 23485210398122134
+const ( // constants, defined in different
+	Math_TAU           = 6.2831853071795864769252867666
+	PCG_DEFAULT_INC_64 = 1442695040888963407
+)
 
-// var rng = pcg.NewPCG32()
+var itemData = map[string]float64{
+	"speed":        1.0,
+	"fireRate":     2.8,
+	"multiShot":    3.3,
+	"wallPunch":    1.25,
+	"splashDamage": 2.0,
+	"piercing":     2.4,
+	"freezing":     1.5,
+	"infection":    2.15,
+}
+
+var pcg pcg32_random_t
+
 var p_inc uint64 = 1442695040888963407
 var p_seed uint64 = 12047754176567800795 // required for godot, it's the default seed it uses for when no seed is set
 var current_inc uint64 = p_inc
@@ -23,66 +37,56 @@ var current_seed uint64 = 0
 var charList = [6]string{"basic", "mage", "laser", "melee", "pointer", "swarm"}
 
 func main() {
-	set_seed(uint64(djb2.SumString("eaea")))
-	itemData := Array{
-		"speed": {
-			Cost: 1.0,
-			Icon: "res://src/ui/shop/speed.svg",
-		},
-		"fireRate": {
-			Cost: 2.8,
-			Icon: "res://src/ui/shop/fireRate.svg",
-		},
-		"multiShot": {
-			Cost: 3.3,
-			Icon: "res://src/ui/shop/multiShot.svg",
-		},
-		"wallPunch": {
-			Cost: 1.25,
-			Icon: "res://src/ui/shop/wallPunch.svg",
-		},
-		"splashDamage": {
-			Cost: 2.0,
-			Icon: "res://src/ui/shop/splashDamage.svg",
-		},
-		"piercing": {
-			Cost: 2.4,
-			Icon: "res://src/ui/shop/piercing.svg",
-		},
-		"freezing": {
-			Cost: 1.5,
-			Icon: "res://src/ui/shop/freezing.svg",
-		},
-		"infection": {
-			Cost: 2.15,
-			Icon: "res://src/ui/shop/infect.svg",
-		},
-	}
+	set_seed(uint64(3823837572363))
+	/* 	test seed, this seed should print:
 
-	fmt.Println("Hello, world!")
+	   	state: 11646146567276427649
+	   	seed: 3823837572363
+	   	char: laser
+	   	abilityChar: mage
+	   	abilityLevel: 1
+	   	itemCategories: [wallPunch speed infection splashDamage multiShot fireRate piercing freezing]
+	   	itemCounts: map[fireRate:6 freezing:26 infection:7 multiShot:3 piercing:9 speed:0 splashDamage:0 wallPunch:0]
+	   	startTime: 641.089106798172
+	   	colorState: 1
+	   	color: 1 0.75686276 0.75686276 1
+	*/
+
 	fmt.Println("state:", get_state())
 	fmt.Println("seed:", get_seed())
+
+	// intensity determines basis for other rolls
 	var intensity = randf_range(0.20, 1.0)
+
 	var char = charList[int(randi())%len(charList)]
 	var abilityChar = charList[int(randi())%len(charList)]
 	var abilityLevel = 1.0 + math.Round(run(randf(), 1.5/(1.0+intensity), 1.0, 0.0)*6)
 
-	itemCategories := []string{"speed", "fireRate", "multiShot", "wallPunch", "splashDamage", "piercing", "freezing", "infection"}
-	fmt.Println("itemCategories:", itemCategories)
+	var itemCategories = []string{"speed", "fireRate", "multiShot", "wallPunch", "splashDamage", "piercing", "freezing", "infection"}
 
 	var itemCount float64 = float64(len(itemCategories))
-
+	// points determine item layout
 	var points = 0.66 * itemCount * randf_range(0.5, 1.5) * (1.0 + 4.0*math.Pow(intensity, 1.5))
 
 	var itemDistSteepness = randf_range(-0.5, 2.0)
 	var itemDistArea = 1.0 / (1.0 + math.Pow(2, 0.98*itemDistSteepness))
 
+	// windowkill uses the ""global"" randomness and shuffle()
+	// instead of that this saves the state (and inc)
+	// then sets the seed to the current seed (because setting the current seed advances the state 2 times im pretty sure, although doesnt really matter)
+	// and after calling shuffle() set the state (and inc) back to what it was before directly
+
 	var oldstate = pcg.state
 	var oldInc = pcg.inc
+
 	seed(get_seed())
 	shuffle(itemCategories)
+
 	pcg.inc = oldInc
 	pcg.state = oldstate
+
+	// chance to move offensive upgrades closer to end if not already
+
 	if randf() < intensity {
 		multishotIdx := -1
 		for i, category := range itemCategories {
@@ -98,6 +102,7 @@ func main() {
 		insertIdx := int32(itemCount) - 1 - randi_range(0, 2)
 		itemCategories = append(itemCategories[:insertIdx], append([]string{"multiShot"}, itemCategories[insertIdx:]...)...)
 	}
+
 	if randf() < intensity {
 		fireRateIdx := -1
 		for i, category := range itemCategories {
@@ -113,17 +118,18 @@ func main() {
 		insertIdx := int32(itemCount) - 1 - randi_range(0, 2)
 		itemCategories = append(itemCategories[:insertIdx], append([]string{"fireRate"}, itemCategories[insertIdx:]...)...)
 	}
-	itemCounts := make(map[string]int)
-	catMax := float64(itemCount - 1)
-	total := 0
+
+	var itemCounts = make(map[string]int)
+	var catMax = float64(itemCount - 1)
+	var total = 0
 	for i := 0; i < int(itemCount); i++ {
-		item := itemCategories[i]
-		catT := float64(i) / catMax
-		cost := itemData[item].Cost
+		var item = itemCategories[i]
+		var catT = float64(i) / catMax
+		var cost = itemData[item]
 		cost = 1.0 + ((cost - 1.0) / 2.5)
 		baseAmount := 0.0
 
-		special := 0.0
+		var special = 0.0
 		if i == int(itemCount)-1 {
 			special += 4.0 * randf_range(0.0, float32(math.Pow(intensity, 2.0)))
 		}
@@ -131,11 +137,15 @@ func main() {
 		itemCounts[item] = int(clamp(math.Round(baseAmount+amount*((points/cost)/(1.0+5.0*itemDistArea))+special), 0.0, 26.0))
 		total += itemCounts[item]
 	}
+
+	// balance for offensive upgrades
 	intensity = -0.05 + intensity*lerp(0.33, 1.2, smoothCorner((float64(itemCounts["multiShot"])*1.8+float64(itemCounts["fireRate"]))/12.0, 1.0, 1.0, 4.0))
+
 	var finalT = randfn(float32(math.Pow(intensity, 1.2)), 0.05)
 	var startTime = clamp(lerp(60.0*2.0, 60.0*20.0, finalT), 60.0*2.0, 60.0*25.0)
-	var r, g, b, _ = colorconv.HSVToRGB(randf(), randf(), float64(1.0))
+	var r, g, b, _ = colorconv.HSVToRGB(randf(), randf(), float64(1.0)) // color
 	var colorState = randi_range(0, 2)
+
 	fmt.Println("char:", char)
 	fmt.Println("abilityChar:", abilityChar)
 	fmt.Println("abilityLevel:", abilityLevel)
@@ -143,22 +153,24 @@ func main() {
 	fmt.Println("itemCounts:", itemCounts)
 	fmt.Println("startTime:", startTime)
 	fmt.Println("colorState:", colorState)
-	fmt.Println(float32(r)/255, float32(g)/255, float32(b)/255, 1.0)
+	fmt.Println("color:", float32(r)/255, float32(g)/255, float32(b)/255, 1.0)
 }
 
-func pinch(v float64) float64 {
+// helper functions
+
+func pinch(v float64) float64 { // function run() uses
 	if v < 0.5 {
 		return -v * v
 	}
 	return v * v
 }
 
-func run(x, a, b, c float64) float64 {
+func run(x, a, b, c float64) float64 { // TorCurve.run() in godot
 	c = pinch(c)
-	x = math.Max(0, math.Min(1, x)) // Clamp input to [0-1]
+	x = math.Max(0, math.Min(1, x))
 
-	const eps = 0.00001 // Protect against div/0
-	s := math.Exp(a)    // Could be any exponential like 2^a or 3^a, or just linear
+	const eps = 0.00001
+	s := math.Exp(a)
 	s2 := 1.0 / (s + eps)
 	t := math.Max(0, math.Min(1, b))
 	u := c
@@ -181,10 +193,10 @@ func run(x, a, b, c float64) float64 {
 		res = (u)*c3 + (1-u)*c1
 	}
 
-	return res // Prevent NaN from Infinity values
+	return res
 }
 
-func smoothCorner(x, m, l, s float64) float64 {
+func smoothCorner(x, m, l, s float64) float64 { // TorCurve.smoothCorner in godot
 	s1 := math.Pow(s/10.0, 2.0)
 	return 0.5 * ((l*x + m*(1.0+s1)) - math.Sqrt(math.Pow(math.Abs(l*x-m*(1.0-s1)), 2.0)+4.0*m*m*s1))
 }
@@ -202,27 +214,18 @@ func clamp(m_a, m_min, m_max float64) float64 {
 	return m_a
 }
 
-type Array map[string]item
-
-type item struct {
-	Cost float64
-	Icon string
-}
-
 func shuffle(arr []string) {
 	n := len(arr)
 	if n <= 1 {
 		return
 	}
 	for i := n - 1; i > 0; i-- {
-		// Generate a random index between 0 and i (inclusive) using your randbound function
 		j := randbound(uint32(i + 1))
-		// Swap the elements at i and j
 		arr[i], arr[j] = arr[j], arr[i]
 	}
 }
 
-var pcg pcg32_random_t
+// end of helper functions
 
 // pcg.h
 
@@ -261,16 +264,16 @@ func pcg32_boundedrand_r(rng *pcg32_random_t, bound uint32) uint32 {
 
 // random_pcg.cpp
 
+// this one is in the source code from godot, and might be used for the global random number generator
 // func randomf64(p_from float64, p_to float64) float64 {
 // 	return randd()*(p_to-p_from) + p_from
 // }
-// this ones in the source code from godot, and might be used for the global random number generator
 
-func randomf32(p_from float32, p_to float32) float32 {
+func randomf32(p_from float32, p_to float32) float32 { // `random()` float version
 	return randf32()*(p_to-p_from) + p_from
 }
 
-func randomi(p_from int, p_to int) int {
+func randomi(p_from int, p_to int) int { // `random()` int version
 	if p_from == p_to {
 		return p_from
 	}
@@ -284,11 +287,11 @@ func randomi(p_from int, p_to int) int {
 
 // random_pcg.h
 
-func randbound(bounds uint32) uint32 {
+func randbound(bounds uint32) uint32 { // rand() with bounds
 	return pcg32_boundedrand_r(&pcg, bounds)
 }
 
-func rand() uint32 {
+func rand() uint32 { // normal rand
 	return pcg32_random_r(&pcg)
 }
 
@@ -333,13 +336,13 @@ func set_state(p_state uint64) { pcg.state = p_state } // this one is just unuse
 func get_state() uint64        { return pcg.state }
 
 func randomize() { // required for godot, but techincally will never be used since it just randomises, can only really be used for seeing which random numbers are more likely than others
-	// PCG_DEFAULT_INC_64 is defined as 1442695040888963407 in pcg.h
-	seed((uint64(time.Now().Unix()+time.Now().UnixNano()/1000)*pcg.state + 1442695040888963407))
+	seed((uint64(time.Now().Unix()+time.Now().UnixNano()/1000)*pcg.state + PCG_DEFAULT_INC_64))
 }
 
 func randi() uint32 {
 	return rand()
 }
+
 func randf() float64 {
 	var proto_exp_offset uint32 = rand()
 	if proto_exp_offset == 0 {
@@ -347,18 +350,19 @@ func randf() float64 {
 	}
 	return float64(float32(math.Ldexp(float64(rand()|0x80000001), -32-bits.LeadingZeros32(proto_exp_offset))))
 }
+
 func randf_range(p_from float32, p_to float32) float64 {
 	return float64(float32(float64(randomf32(p_from, p_to))))
 }
+
 func randfn(p_mean float32, p_deviation float32) float64 {
 	var temp float32 = randf32()
 	if temp < 0.00001 {
 		temp += 0.00001 // this is what CMP_EPSILON is defined as
 	}
-	// Math_TAU is defined as 6.2831853071795864769252867666
-	Math_TAU := 6.2831853071795864769252867666
 	return float64(p_mean + p_deviation*(float32(math.Cos(Math_TAU*float64(randf32()))*math.Sqrt(-2.0*math.Log(float64(temp))))))
 }
+
 func randi_range(p_from int, p_to int) int32 {
 	return int32(randomi(p_from, p_to))
 }
