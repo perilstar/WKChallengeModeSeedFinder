@@ -1,2 +1,4 @@
 github.com/crazy3lf/colorconv v1.2.0 h1:UM7kSZWnwFMGiC+PpYrjxQSOd6sEyWb+dRKKTd3KslA=
 github.com/crazy3lf/colorconv v1.2.0/go.mod h1:2jTJ7QCWCj2sSLOhF4Gzi0J5/hoX8/VY8VzNvXAlD1I=
+github.com/dim13/djb2 v0.0.0-20200503095153-ab609a628381 h1:NIWfRb7pp5MjIde/2HZcCJkiBYlgBNinATgursvH2fs=
+github.com/dim13/djb2 v0.0.0-20200503095153-ab609a628381/go.mod h1:oPb7xe7gfke5PHBR3VS2dK8YBlI2TLREWA9V/ycNZiY=
