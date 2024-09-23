@@ -1,4 +1,4 @@
-module test
+module github.com/kr1viah/WKChallengeModeSeedFinder
 
 go 1.23.1
 
